@@ -8,16 +8,19 @@
   "backToTaskList": "Back to task list",
   "confirmDeleteTask": "Are you sure you want to delete this task?",
   "createdBy": "Created by",
+  "date": "Date",
   "deleteTask": "Delete task",
   "discard": "Discard",
   "dueDate": "Due date",
-  "dueDateLabel": "Due date",
   "dueDatePlaceholder": "Select a due date",
+  "dueDateRequired": "Due date is required when Date is selected",
+  "dueLabel": "Due",
   "edit": "Edit",
   "loading": "Loading",
   "loadingTask": "Loading task...",
   "markComplete": "Mark complete",
   "name": "Name",
+  "nextVisit": "Next visit",
   "noAssignment": "No assignment",
   "noTasksMessage": "No tasks yet",
   "overdue": "Overdue",
@@ -38,5 +41,6 @@
   "taskNameLabel": "Task name",
   "taskNamePlaceholder": "Enter task name",
   "taskNameRequired": "Task name is required",
-  "taskUpdateFailed": "Unable to update task"
+  "taskUpdateFailed": "Unable to update task",
+  "thisVisit": "This visit"
 }

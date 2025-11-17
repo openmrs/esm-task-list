@@ -16,11 +16,15 @@ export interface Assignee {
   type: 'person' | 'role';
 }
 
+export type DueDateType = 'THIS_VISIT' | 'NEXT_VISIT' | 'DATE';
+
 export interface Task {
   uuid: string;
   name: string;
   status?: string;
   dueDate?: string;
+  dueDateType?: DueDateType;
+  visitUuid?: string;
   rationale?: string;
   assignee?: Assignee;
   completed: boolean;
@@ -29,6 +33,8 @@ export interface Task {
 export interface TaskInput {
   name: string;
   dueDate?: string;
+  dueDateType?: DueDateType;
+  visitUuid?: string;
   rationale?: string;
   assignee?: Assignee;
 }
@@ -156,13 +162,15 @@ function createTaskFromCarePlan(carePlan: fhir.CarePlan): Task {
   const status = detail?.status;
 
   const performers = detail?.performer ?? [];
-  const dueDate = extractDueDate(detail);
+  const { dueDate, dueDateType, visitUuid } = extractDueDateInfo(detail);
 
   const task: Task = {
     uuid: carePlan.id ?? '',
     name: detail?.description ?? '',
     status,
     dueDate,
+    dueDateType,
+    visitUuid,
     rationale: carePlan.description ?? undefined,
     completed: (status ?? '').toLowerCase() === 'completed',
   };
@@ -209,7 +217,28 @@ function buildCarePlan(patientUuid: string, task: Partial<Task> & Pick<Task, 'na
     detail.performer = performer;
   }
 
-  if (task.dueDate) {
+  // Handle due date based on type
+  if (task.dueDateType === 'THIS_VISIT' || task.dueDateType === 'NEXT_VISIT') {
+    // Use scheduledString for visit-based due dates
+    detail.scheduledString = task.dueDateType === 'THIS_VISIT' ? 'this visit' : 'next visit';
+
+    // Add encounter extension if visit UUID is provided
+    if (task.visitUuid) {
+      detail.extension = detail.extension || [];
+      detail.extension.push({
+        url: 'http://hl7.org/fhir/StructureDefinition/encounter-associatedEncounter',
+        valueReference: {
+          reference: `Encounter/${task.visitUuid}`,
+        },
+      });
+    }
+  } else if (task.dueDateType === 'DATE' && task.dueDate) {
+    // Use scheduledPeriod for actual dates
+    detail.scheduledPeriod = {
+      end: task.dueDate,
+    };
+  } else if (task.dueDate) {
+    // Fallback for backward compatibility: if no type is set but date exists, treat as DATE
     detail.scheduledPeriod = {
       end: task.dueDate,
     };
@@ -273,25 +302,69 @@ function parseAssignment(
   return null;
 }
 
-function extractDueDate(detail?: fhir.CarePlanActivityDetail): string | null {
+function extractDueDateInfo(detail?: fhir.CarePlanActivityDetail): {
+  dueDate?: string;
+  dueDateType?: DueDateType;
+  visitUuid?: string;
+} {
   if (!detail) {
-    return null;
+    return {};
   }
 
+  // Check for scheduledString (visit-based due dates)
+  if (typeof detail.scheduledString === 'string' && detail.scheduledString.trim().length > 0) {
+    const scheduledString = detail.scheduledString.trim().toLowerCase();
+    let dueDateType: DueDateType | undefined;
+
+    if (scheduledString === 'this visit') {
+      dueDateType = 'THIS_VISIT';
+    } else if (scheduledString === 'next visit') {
+      dueDateType = 'NEXT_VISIT';
+    }
+
+    // Extract visit UUID from encounter extension
+    let visitUuid: string | undefined;
+    if (detail.extension) {
+      for (const ext of detail.extension) {
+        if (ext.url === 'http://hl7.org/fhir/StructureDefinition/encounter-associatedEncounter' && ext.valueReference) {
+          const ref = ext.valueReference.reference || '';
+          if (ref.startsWith('Encounter/')) {
+            visitUuid = ref.substring('Encounter/'.length);
+          }
+        }
+      }
+    }
+
+    return {
+      dueDate: detail.scheduledString,
+      dueDateType,
+      visitUuid,
+    };
+  }
+
+  // Check for scheduledPeriod (actual date)
   if (detail.scheduledPeriod?.end) {
-    return detail.scheduledPeriod.end;
+    return {
+      dueDate: detail.scheduledPeriod.end,
+      dueDateType: 'DATE',
+    };
   }
 
+  // Fallback for other scheduled types
   const timingEvent = detail.scheduledTiming?.event?.[0];
   if (timingEvent) {
-    return timingEvent;
+    return {
+      dueDate: timingEvent,
+      dueDateType: 'DATE',
+    };
   }
 
-  if (typeof detail.scheduledString === 'string' && detail.scheduledString.trim().length > 0) {
-    return detail.scheduledString;
-  }
+  return {};
+}
 
-  return null;
+function extractDueDate(detail?: fhir.CarePlanActivityDetail): string | null {
+  const { dueDate } = extractDueDateInfo(detail);
+  return dueDate || null;
 }
 
 export function useFetchProviders() {
