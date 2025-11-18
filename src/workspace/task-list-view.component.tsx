@@ -1,6 +1,6 @@
 import React, { useCallback, useState } from 'react';
 import classNames from 'classnames';
-import { Checkbox, Tile, Tag, Loading, InlineLoading, Layer } from '@carbon/react';
+import { Checkbox, Tile, Tag, Loading, InlineLoading, Layer, ClickableTile } from '@carbon/react';
 import { formatDate, parseDate, showSnackbar, useLayoutType } from '@openmrs/esm-framework';
 import { useTranslation } from 'react-i18next';
 import { type Task, useTaskList, toggleTaskCompletion } from './task-list.resource';
@@ -100,7 +100,8 @@ const TaskListView: React.FC<TaskListViewProps> = ({ patientUuid, onTaskClick })
 
         return (
           <li key={task.uuid}>
-            <Tile
+            <ClickableTile
+              onClick={() => onTaskClick?.(task)}
               role="listitem"
               className={classNames(styles.taskTile, {
                 [styles.tabletTaskTile]: isTablet,
@@ -123,18 +124,7 @@ const TaskListView: React.FC<TaskListViewProps> = ({ patientUuid, onTaskClick })
                     />
                   </div>
                   <div className={styles.taskNameWrapper}>
-                    {onTaskClick ? (
-                      <button
-                        type="button"
-                        className={styles.taskNameButton}
-                        onClick={() => onTaskClick(task)}
-                        disabled={isUpdating}
-                      >
-                        {task.name}
-                      </button>
-                    ) : (
-                      <span className={styles.taskName}>{task.name}</span>
-                    )}
+                    <span className={styles.taskName}>{task.name}</span>
                     {task.rationale && <div className={styles.taskRationalePreview}>{task.rationale}</div>}
                     <div className={styles.taskAssignee}>{assigneeDisplay}</div>
                   </div>
@@ -147,7 +137,7 @@ const TaskListView: React.FC<TaskListViewProps> = ({ patientUuid, onTaskClick })
                   )}
                 </div>
               </div>
-            </Tile>
+            </ClickableTile>
           </li>
         );
       })}

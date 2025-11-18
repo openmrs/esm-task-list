@@ -62,30 +62,9 @@
   min-width: 0;
 }
 
-.taskNameButton {
-  background: none;
-  border: none;
-  padding: 0;
-  text-align: left;
-  color: $interactive-01;
-  font-size: 0.875rem;
-  font-weight: 600;
-  cursor: pointer;
-
-  &:hover {
-    text-decoration: underline;
-  }
-
-  &:disabled {
-    cursor: not-allowed;
-    opacity: 0.6;
-  }
-}
-
 .taskName {
   font-size: 0.875rem;
   font-weight: 600;
-  color: $interactive-01;
 }
 
 .taskRationalePreview {

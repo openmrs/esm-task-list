@@ -1,11 +1,12 @@
-import React, { useCallback, useState } from 'react';
-import { Button, ButtonSet } from '@carbon/react';
+import React, { useCallback, useMemo, useState } from 'react';
+import { Button, ButtonSet, Layer } from '@carbon/react';
 import { formatDate, parseDate, showSnackbar } from '@openmrs/esm-framework';
 import { useTranslation } from 'react-i18next';
 import { ArrowLeft, Edit, Information } from '@carbon/react/icons';
 import { useTask, deleteTask, toggleTaskCompletion, taskListSWRKey, type Task } from './task-list.resource';
 import { useSWRConfig } from 'swr';
 import styles from './task-details-view.scss';
+import Loader from '../loader/loader.component';
 
 export interface TaskDetailsViewProps {
   patientUuid: string;
@@ -19,16 +20,17 @@ const TaskDetailsView: React.FC<TaskDetailsViewProps> = ({ patientUuid, taskUuid
   const { task, isLoading, error, mutate } = useTask(taskUuid);
   const { mutate: mutateList } = useSWRConfig();
   const [isDeleting, setIsDeleting] = useState(false);
-  const [isCompleting, setIsCompleting] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
 
   const handleDelete = useCallback(async () => {
-    if (!task || !window.confirm(t('confirmDeleteTask', 'Are you sure you want to delete this task?'))) {
+    // TODO: Add a confirmation dialog
+    if (!task) {
       return;
     }
 
     setIsDeleting(true);
     try {
-      await deleteTask(task.uuid);
+      await deleteTask(patientUuid, task);
       await mutateList(taskListSWRKey(patientUuid));
       showSnackbar({
         title: t('taskDeleted', 'Task deleted'),
@@ -45,18 +47,18 @@ const TaskDetailsView: React.FC<TaskDetailsViewProps> = ({ patientUuid, taskUuid
     }
   }, [task, mutateList, patientUuid, onBack, t]);
 
-  const handleMarkComplete = useCallback(async () => {
+  const handleToggleCompletion = useCallback(async (completed: boolean) => {
     if (!task) {
       return;
     }
 
-    setIsCompleting(true);
+    setIsUpdating(true);
     try {
-      await toggleTaskCompletion(patientUuid, task, true);
+      await toggleTaskCompletion(patientUuid, task, completed);
       await mutate();
       await mutateList(taskListSWRKey(patientUuid));
       showSnackbar({
-        title: t('taskCompleted', 'Task marked as complete'),
+        title: completed ? t('taskCompleted', 'Task marked as complete') : t('taskIncomplete', 'Task marked as incomplete'),
         kind: 'success',
       });
     } catch (_error) {
@@ -65,33 +67,53 @@ const TaskDetailsView: React.FC<TaskDetailsViewProps> = ({ patientUuid, taskUuid
         kind: 'error',
       });
     } finally {
-      setIsCompleting(false);
+      setIsUpdating(false);
     }
   }, [task, patientUuid, mutate, mutateList, t]);
 
-  if (isLoading) {
-    return <p className={styles.helperText}>{t('loadingTask', 'Loading task...')}</p>;
-  }
+  const dueDateDisplay = useMemo(() => {
+    if (!task) {
+      return null;
+    }
+    if (!task.dueDateType) {
+      return null;
+    }
+    if (task.dueDateType === 'DATE') {
+      return formatDate(parseDate(task.dueDate), { mode: 'wide' });
+    }
+    // TODO: Right now we don't have a reasonable way to display the due date for this
+    // visit or next visit. This will require some design discussion.
+    if (task.dueDateType === 'THIS_VISIT') {
+      return t('thisVisit', 'This visit');
+    }
+    if (task.dueDateType === 'NEXT_VISIT') {
+      return t('nextVisit', 'Next visit');
+    }
+  }, [task, t]);
 
-  if (error || !task) {
-    return (
-      <>
-        <p className={styles.errorText}>{t('taskLoadError', 'There was a problem loading the task.')}</p>
-        <Button kind="ghost" renderIcon={(props) => <ArrowLeft size={16} {...props} />} onClick={onBack}>
-          {t('backToTaskList', 'Back to task list')}
-        </Button>
-      </>
-    );
-  }
-
-  const dueDateDisplay = task.dueDate ? formatDate(parseDate(task.dueDate)) : null;
-  const assigneeDisplay = task.assignee 
+  const assigneeDisplay = task?.assignee 
     ? (task.assignee.display ?? task.assignee.uuid)
     : t('noAssignment', 'No assignment');
 
+  
+    if (isLoading) {
+      return <Loader />;
+    }
+  
+    if (error || !task) {
+      return (
+        <>
+          <p className={styles.errorText}>{t('taskLoadError', 'There was a problem loading the task.')}</p>
+          <Button kind="ghost" renderIcon={(props) => <ArrowLeft size={16} {...props} />} onClick={onBack}>
+            {t('backToTaskList', 'Back to task list')}
+          </Button>
+        </>
+      );
+    }
+
   return (
     <div className={styles.taskDetailsContainer}>
-      <div className={styles.taskDetailsContent}>
+      <Layer className={styles.taskDetailsBox}>
         <div className={styles.section}>
           <div className={styles.sectionHeader}>
             <h5 className={styles.sectionTitle}>{t('task', 'Task')}</h5>
@@ -107,26 +129,23 @@ const TaskDetailsView: React.FC<TaskDetailsViewProps> = ({ patientUuid, taskUuid
               </Button>
             )}
           </div>
-          <div className={styles.sectionContent}>
+          <div>
             <div className={styles.detailRow}>
-              <span className={styles.detailLabel}>{t('name', 'Name')}:</span>
-              <span className={styles.detailValueName}>{task.name}</span>
+              <div className={styles.detailLabel}>{t('name', 'Name')}</div>
+              <div>{task.name}</div>
             </div>
             <div className={styles.detailRow}>
-              <span className={styles.detailLabel}>{t('createdBy', 'Created by')}:</span>
-              <span className={styles.detailValue}>
-                {t('system', 'System')}
-                <Information size={16} className={styles.infoIcon} />
-              </span>
+              <div className={styles.detailLabel}>{t('createdBy', 'Created by')}</div>
+              <div>{task.createdBy}</div>
             </div>
             <div className={styles.detailRow}>
-              <span className={styles.detailLabel}>{t('assignedTo', 'Assigned to')}:</span>
-              <span className={styles.detailValue}>{assigneeDisplay}</span>
+              <div className={styles.detailLabel}>{t('assignedTo', 'Assigned to')}</div>
+              <div>{assigneeDisplay}</div>
             </div>
             {dueDateDisplay && (
               <div className={styles.detailRow}>
-                <span className={styles.detailLabel}>{t('dueDate', 'Due date')}:</span>
-                <span className={styles.detailValue}>{dueDateDisplay}</span>
+                <div className={styles.detailLabel}>{t('dueDate', 'Due date')}</div>
+                <div>{dueDateDisplay}</div>
               </div>
             )}
           </div>
@@ -135,33 +154,38 @@ const TaskDetailsView: React.FC<TaskDetailsViewProps> = ({ patientUuid, taskUuid
         {task.rationale && (
           <div className={styles.section}>
             <h5 className={styles.sectionTitle}>{t('rationale', 'Rationale')}</h5>
-            <div className={styles.sectionContent}>
-              <p className={styles.rationaleText}>{task.rationale}</p>
+            <div>
+              <p>{task.rationale}</p>
             </div>
           </div>
         )}
-
-        <ButtonSet className={styles.actionButtons}>
+      </Layer>
+      <ButtonSet className={styles.actionButtons}>
+        <Button
+          kind="danger--tertiary"
+          onClick={handleDelete}
+          disabled={isDeleting}
+        >
+          {t('deleteTask', 'Delete task')}
+        </Button>
+        {!task.completed ? (
           <Button
-            kind="danger--tertiary"
-            onClick={handleDelete}
-            disabled={isDeleting}
-            className={styles.deleteButton}
+            kind="secondary"
+            onClick={() => handleToggleCompletion(true)}
+            disabled={isUpdating}
           >
-            {t('deleteTask', 'Delete task')}
+            {t('markComplete', 'Mark complete')}
           </Button>
-          {!task.completed && (
-            <Button
-              kind="secondary"
-              onClick={handleMarkComplete}
-              disabled={isCompleting}
-              className={styles.completeButton}
-            >
-              {t('markComplete', 'Mark complete')}
-            </Button>
-          )}
-        </ButtonSet>
-      </div>
+        ):
+        <Button
+          kind="tertiary"
+          onClick={() => handleToggleCompletion(false)}
+          disabled={isUpdating}
+        >
+          {t('markIncomplete', 'Mark incomplete')}
+        </Button>
+        }
+      </ButtonSet>
     </div>
   );
 };

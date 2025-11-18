@@ -8,6 +8,7 @@ import {
   useOpenmrsSWR,
   parseDate,
   useDebounce,
+  useConfig,
 } from '@openmrs/esm-framework';
 
 export interface Assignee {
@@ -27,6 +28,7 @@ export interface Task {
   visitUuid?: string;
   rationale?: string;
   assignee?: Assignee;
+  createdBy?: string;
   completed: boolean;
 }
 
@@ -77,8 +79,9 @@ export function useTaskList(patientUuid: string) {
   const tasks = useMemo(() => {
     const parsedTasks = data?.data?.entry?.map((entry) => createTaskFromCarePlan(entry.resource)) ?? [];
     const validTasks = parsedTasks.filter((task) => Boolean(task.uuid));
+    const activeTasks = validTasks.filter((task) => task.status !== 'cancelled');
 
-    return validTasks.sort((a, b) => {
+    return activeTasks.sort((a, b) => {
       if (a.completed !== b.completed) {
         return a.completed ? 1 : -1;
       }
@@ -94,10 +97,7 @@ export function useTaskList(patientUuid: string) {
 }
 
 export function saveTask(patientUuid: string, task: TaskInput) {
-  const carePlan = buildCarePlan(patientUuid, {
-    ...task,
-    status: 'not-started',
-  });
+  const carePlan = buildCarePlan(patientUuid, task, task.visitUuid);
 
   return openmrsFetch(carePlanEndpoint, {
     headers: {
@@ -130,12 +130,8 @@ export function toggleTaskCompletion(patientUuid: string, task: Task, completed:
   });
 }
 
-export function taskSWRKey(taskUuid: string) {
-  return `${carePlanEndpoint}/${taskUuid}`;
-}
-
 export function useTask(taskUuid: string) {
-  const swrKey = taskSWRKey(taskUuid);
+  const swrKey = `${carePlanEndpoint}/${taskUuid}`;
   const { data, isLoading, error, mutate } = useSWR<{ data: fhir.CarePlan }>(swrKey, openmrsFetch);
 
   const task = useMemo(() => {
@@ -148,9 +144,10 @@ export function useTask(taskUuid: string) {
   return { task, isLoading, error, mutate };
 }
 
-export function deleteTask(taskUuid: string) {
-  return openmrsFetch(`${carePlanEndpoint}/${taskUuid}`, {
-    method: 'DELETE',
+export function deleteTask(patientUuid: string, task: Task) {
+  return updateTask(patientUuid, {
+    ...task,
+    status: 'cancelled',
   });
 }
 
@@ -162,7 +159,8 @@ function createTaskFromCarePlan(carePlan: fhir.CarePlan): Task {
   const status = detail?.status;
 
   const performers = detail?.performer ?? [];
-  const { dueDate, dueDateType, visitUuid } = extractDueDateInfo(detail);
+  const { dueDate, dueDateType } = extractDueDate(detail);
+  const createdBy = (carePlan?.author as fhir.Reference)?.display;
 
   const task: Task = {
     uuid: carePlan.id ?? '',
@@ -170,8 +168,8 @@ function createTaskFromCarePlan(carePlan: fhir.CarePlan): Task {
     status,
     dueDate,
     dueDateType,
-    visitUuid,
     rationale: carePlan.description ?? undefined,
+    createdBy,
     completed: (status ?? '').toLowerCase() === 'completed',
   };
 
@@ -191,7 +189,7 @@ function createTaskFromCarePlan(carePlan: fhir.CarePlan): Task {
   return task;
 }
 
-function buildCarePlan(patientUuid: string, task: Partial<Task> & Pick<Task, 'name'>) {
+function buildCarePlan(patientUuid: string, task: Partial<Task> & Pick<Task, 'name'>, visitUuid?: string) {
   const performer: Array<fhir.Reference> = [];
 
   if (task.assignee?.uuid) {
@@ -219,16 +217,15 @@ function buildCarePlan(patientUuid: string, task: Partial<Task> & Pick<Task, 'na
 
   // Handle due date based on type
   if (task.dueDateType === 'THIS_VISIT' || task.dueDateType === 'NEXT_VISIT') {
-    // Use scheduledString for visit-based due dates
     detail.scheduledString = task.dueDateType === 'THIS_VISIT' ? 'this visit' : 'next visit';
 
     // Add encounter extension if visit UUID is provided
-    if (task.visitUuid) {
+    if (visitUuid) {
       detail.extension = detail.extension || [];
       detail.extension.push({
         url: 'http://hl7.org/fhir/StructureDefinition/encounter-associatedEncounter',
         valueReference: {
-          reference: `Encounter/${task.visitUuid}`,
+          reference: `Encounter/${visitUuid}`,
         },
       });
     }
@@ -302,43 +299,24 @@ function parseAssignment(
   return null;
 }
 
-function extractDueDateInfo(detail?: fhir.CarePlanActivityDetail): {
+function extractDueDate(detail?: fhir.CarePlanActivityDetail): {
   dueDate?: string;
   dueDateType?: DueDateType;
-  visitUuid?: string;
 } {
-  if (!detail) {
-    return {};
-  }
 
   // Check for scheduledString (visit-based due dates)
-  if (typeof detail.scheduledString === 'string' && detail.scheduledString.trim().length > 0) {
-    const scheduledString = detail.scheduledString.trim().toLowerCase();
+  if (detail.scheduledString) {
     let dueDateType: DueDateType | undefined;
 
-    if (scheduledString === 'this visit') {
+    if (detail.scheduledString === 'this visit') {
       dueDateType = 'THIS_VISIT';
-    } else if (scheduledString === 'next visit') {
+    } else if (detail.scheduledString === 'next visit') {
       dueDateType = 'NEXT_VISIT';
     }
 
-    // Extract visit UUID from encounter extension
-    let visitUuid: string | undefined;
-    if (detail.extension) {
-      for (const ext of detail.extension) {
-        if (ext.url === 'http://hl7.org/fhir/StructureDefinition/encounter-associatedEncounter' && ext.valueReference) {
-          const ref = ext.valueReference.reference || '';
-          if (ref.startsWith('Encounter/')) {
-            visitUuid = ref.substring('Encounter/'.length);
-          }
-        }
-      }
-    }
-
     return {
-      dueDate: detail.scheduledString,
+      dueDate: null,
       dueDateType,
-      visitUuid,
     };
   }
 
@@ -350,21 +328,7 @@ function extractDueDateInfo(detail?: fhir.CarePlanActivityDetail): {
     };
   }
 
-  // Fallback for other scheduled types
-  const timingEvent = detail.scheduledTiming?.event?.[0];
-  if (timingEvent) {
-    return {
-      dueDate: timingEvent,
-      dueDateType: 'DATE',
-    };
-  }
-
   return {};
-}
-
-function extractDueDate(detail?: fhir.CarePlanActivityDetail): string | null {
-  const { dueDate } = extractDueDateInfo(detail);
-  return dueDate || null;
 }
 
 export function useFetchProviders() {
@@ -385,10 +349,9 @@ export function useFetchProviders() {
 }
 
 export function useProviderRoles() {
-  const response = useSWRImmutable<FetchResponse<ProviderRoleSearchResponse>>(
-    `${restBaseUrl}/providerrole?v=custom:(uuid,name)`,
-    openmrsFetch,
-  );
+  const { allowAssigningProviderRole } = useConfig();
+  const url = allowAssigningProviderRole ? `${restBaseUrl}/providerrole?v=custom:(uuid,name)` : null;
+  const response = useSWRImmutable<FetchResponse<ProviderRoleSearchResponse>>(url, openmrsFetch);
   console.log('useProviderRoles', response);
   const results = response?.data?.data?.results ?? [];
   return results.map((result) => ({

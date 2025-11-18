@@ -5,7 +5,7 @@ import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Button, ButtonSet, ComboBox, Form, Layer, TextArea, TextInput } from '@carbon/react';
-import { showSnackbar, useLayoutType, restBaseUrl, openmrsFetch, isDesktop } from '@openmrs/esm-framework';
+import { showSnackbar, useLayoutType, restBaseUrl, openmrsFetch, isDesktop, useConfig } from '@openmrs/esm-framework';
 import type { FetchResponse } from '@openmrs/esm-framework';
 import styles from './add-task-form.scss';
 import {
@@ -32,6 +32,8 @@ const AddTaskForm: React.FC<AddTaskFormProps> = ({ patientUuid, onBack }) => {
   const isTablet = !isDesktop(useLayoutType());
 
   const { providers, setProviderQuery, isLoading, error } = useFetchProviders();
+
+  const { allowAssigningProviderRole } = useConfig();
 
   const optionSchema = z.object({
     id: z.string(),
@@ -264,31 +266,33 @@ const AddTaskForm: React.FC<AddTaskFormProps> = ({ patientUuid, onBack }) => {
               />
             </InputWrapper>
 
-            <InputWrapper>
-              <Controller
-                name="assigneeRole"
-                control={control}
-                render={({ field }) => (
-                  <ComboBox
-                    id="assigneeRole"
-                    titleText={t('assignProviderRoleLabel', 'Assign to provider role')}
-                    placeholder={t('assignProviderRolePlaceholder', 'Search provider roles')}
-                    items={providerRoleOptions}
-                    itemToString={(item) => item?.label ?? ''}
-                    selectedItem={field.value ?? null}
-                    onChange={({ selectedItem }) => {
-                      field.onChange(selectedItem ?? undefined);
-                      if (selectedItem) {
-                        setValue('assignee', undefined, { shouldDirty: true, shouldValidate: true });
-                      }
-                    }}
-                    helperText={providerRoleSearchHelper}
-                    invalid={Boolean(errors.assigneeRole)}
-                    invalidText={errors.assigneeRole?.message}
-                  />
-                )}
-              />
-            </InputWrapper>
+            {allowAssigningProviderRole && (
+              <InputWrapper>
+                <Controller
+                  name="assigneeRole"
+                  control={control}
+                  render={({ field }) => (
+                    <ComboBox
+                      id="assigneeRole"
+                      titleText={t('assignProviderRoleLabel', 'Assign to provider role')}
+                      placeholder={t('assignProviderRolePlaceholder', 'Search provider roles')}
+                      items={providerRoleOptions}
+                      itemToString={(item) => item?.label ?? ''}
+                      selectedItem={field.value ?? null}
+                      onChange={({ selectedItem }) => {
+                        field.onChange(selectedItem ?? undefined);
+                        if (selectedItem) {
+                          setValue('assignee', undefined, { shouldDirty: true, shouldValidate: true });
+                        }
+                      }}
+                      helperText={providerRoleSearchHelper}
+                      invalid={Boolean(errors.assigneeRole)}
+                      invalidText={errors.assigneeRole?.message}
+                    />
+                  )}
+                />
+              </InputWrapper>
+            )}
           </div>
 
           <div className={styles.formSection}>
