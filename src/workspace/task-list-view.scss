@@ -21,6 +21,8 @@
 .taskTile {
   padding: 0;
   border: 1px solid $grey-2;
+  display: flex;
+  flex-direction: row;
 }
 
 .tabletTaskTile {
@@ -29,29 +31,33 @@
   }
 }
 
-.taskTileContent {
+.taskTileCheckbox {
+  padding: layout.$spacing-03 0 layout.$spacing-03 layout.$spacing-05;
+  display: flex;
+  align-items: flex-start;
+  gap: layout.$spacing-03;
+  min-width: 0;
+}
+
+.taskTileContentButton {
   padding: layout.$spacing-03 layout.$spacing-05;
   display: flex;
-  flex-direction: row;
-  gap: layout.$spacing-04;
+  align-items: flex-start;
+  gap: layout.$spacing-03;
+  min-width: 0;
+  border: none;
+  background-color: transparent;
+  text-align: left;
+  flex: 1;
+  transition: background-color 1s ease-in-out;
+}
+
+.taskTileContentButton:hover {
+  background-color: rgba(colors.$gray-100, 0.03);
 }
 
 .completedTile {
   opacity: 0.65;
-}
-
-.taskTileLeft {
-  display: flex;
-  align-items: flex-start;
-  gap: layout.$spacing-03;
-  flex: 1;
-  min-width: 0;
-}
-
-.taskTileRight {
-  display: flex;
-  align-items: flex-start;
-  flex-shrink: 0;
 }
 
 .taskNameWrapper {
@@ -62,11 +68,6 @@
   min-width: 0;
 }
 
-.taskName {
-  font-size: 0.875rem;
-  font-weight: 600;
-}
-
 .taskRationalePreview {
   font-size: 0.875rem;
   color: $text-02;
@@ -74,7 +75,7 @@
 }
 
 .taskAssignee {
-  font-size: 0.875rem;
+  @include type.type-style('label-01');
   color: $text-02;
 }
 

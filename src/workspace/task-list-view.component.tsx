@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import classNames from 'classnames';
 import { Checkbox, Tile, Tag, Loading, InlineLoading, Layer, ClickableTile } from '@carbon/react';
 import { formatDate, parseDate, showSnackbar, useLayoutType } from '@openmrs/esm-framework';
@@ -99,44 +99,41 @@ const TaskListView: React.FC<TaskListViewProps> = ({ patientUuid, onTaskClick })
 
         return (
           <li key={task.uuid}>
-            <ClickableTile
-              onClick={() => onTaskClick?.(task)}
+            <Tile
               role="listitem"
               className={classNames(styles.taskTile, {
                 [styles.tabletTaskTile]: isTablet,
                 [styles.completedTile]: task.completed,
               })}
             >
-              <div className={styles.taskTileContent}>
-                <div className={styles.taskTileLeft}>
-                  <div
-                    className={classNames(styles.checkboxWrapper, {
-                      [styles.completedCheckbox]: task.completed,
-                    })}
-                  >
-                    <Checkbox
-                      id={`task-${task.uuid}`}
-                      labelText=""
-                      checked={task.completed}
-                      disabled={isUpdating}
-                      onChange={(_, { checked }) => handleToggle(task, checked)}
-                    />
-                  </div>
-                  <div className={styles.taskNameWrapper}>
-                    <span className={styles.taskName}>{task.name}</span>
-                    {task.rationale && <div className={styles.taskRationalePreview}>{task.rationale}</div>}
-                    <div className={styles.taskAssignee}>{assigneeDisplay}</div>
-                  </div>
-                </div>
-                <div className={styles.taskTileRight}>
-                  {overdue && (
-                    <Tag type="red" size="sm">
-                      {t('overdue', 'Overdue')}
-                    </Tag>
-                  )}
+              <div className={styles.taskTileCheckbox}>
+                <div
+                  className={classNames(styles.checkboxWrapper, {
+                    [styles.completedCheckbox]: task.completed,
+                  })}
+                >
+                  <Checkbox
+                    id={`task-${task.uuid}`}
+                    labelText=""
+                    checked={task.completed}
+                    disabled={isUpdating}
+                    onChange={(_, { checked }) => handleToggle(task, checked)}
+                  />
                 </div>
               </div>
-            </ClickableTile>
+              <button onClick={() => onTaskClick?.(task)} className={styles.taskTileContentButton}>
+                <div className={styles.taskNameWrapper}>
+                  <span>{task.name}</span>
+                  {task.rationale && <div className={styles.taskRationalePreview}>{task.rationale}</div>}
+                  <div className={styles.taskAssignee}>{assigneeDisplay}</div>
+                </div>
+                {overdue && (
+                  <Tag type="red" size="sm">
+                    {t('overdue', 'Overdue')}
+                  </Tag>
+                )}
+              </button>
+            </Tile>
           </li>
         );
       })}
