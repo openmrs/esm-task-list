@@ -88,6 +88,7 @@ const TaskDetailsView: React.FC<TaskDetailsViewProps> = ({ patientUuid, taskUuid
       return {};
     }
     const scheduledToday = isOmrsDateToday(task.createdDate);
+    console.log(task.name, 'task.createdDate', task.createdDate, 'isToday', scheduledToday);
     if (task.dueDate?.type === 'DATE') {
       return {
         type: 'DATE',
@@ -100,7 +101,7 @@ const TaskDetailsView: React.FC<TaskDetailsViewProps> = ({ patientUuid, taskUuid
         schedulingInfo: scheduledToday
           ? t('scheduledTodayForThisVisit', 'Today for this visit')
           : t('scheduledOnThisVisit', 'On {{date}} for the same visit', {
-              date: formatDate(task.createdDate, { mode: 'wide' }),
+              date: formatDate(task.createdDate),
             }),
         dueDate: task.dueDate.date ? formatDate(task.dueDate.date, { mode: 'wide' }) : undefined,
       };
@@ -111,7 +112,7 @@ const TaskDetailsView: React.FC<TaskDetailsViewProps> = ({ patientUuid, taskUuid
         schedulingInfo: scheduledToday
           ? t('scheduledTodayForNextVisit', 'Today for next visit')
           : t('scheduledOnNextVisit', 'On {{date}} for the following visit', {
-              date: formatDate(task.createdDate, { mode: 'wide' }),
+              date: formatDate(task.createdDate),
             }),
         dueDate: task.dueDate.date ? formatDate(task.dueDate.date, { mode: 'wide' }) : undefined,
       };

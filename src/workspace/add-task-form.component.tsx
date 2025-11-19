@@ -1,11 +1,31 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import classNames from 'classnames';
 import { useTranslation } from 'react-i18next';
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Button, ButtonSet, ComboBox, Form, Layer, TextArea, TextInput } from '@carbon/react';
-import { showSnackbar, useLayoutType, restBaseUrl, openmrsFetch, isDesktop, useConfig, parseDate } from '@openmrs/esm-framework';
+import {
+  Button,
+  ButtonSet,
+  ComboBox,
+  ContentSwitcher,
+  Form,
+  FormGroup,
+  FormLabel,
+  Layer,
+  Switch,
+  TextArea,
+  TextInput,
+} from '@carbon/react';
+import {
+  showSnackbar,
+  useLayoutType,
+  restBaseUrl,
+  openmrsFetch,
+  isDesktop,
+  useConfig,
+  parseDate,
+  useVisit,
+} from '@openmrs/esm-framework';
 import type { FetchResponse } from '@openmrs/esm-framework';
 import styles from './add-task-form.scss';
 import {
@@ -29,7 +49,7 @@ export interface AddTaskFormProps {
 const AddTaskForm: React.FC<AddTaskFormProps> = ({ patientUuid, onBack }) => {
   const { t } = useTranslation();
 
-  const isTablet = !isDesktop(useLayoutType());
+  const { activeVisit, isLoading: isVisitLoading } = useVisit(patientUuid);
 
   const { providers, setProviderQuery, isLoading, error } = useFetchProviders();
 
@@ -80,13 +100,17 @@ const AddTaskForm: React.FC<AddTaskFormProps> = ({ patientUuid, onBack }) => {
 
   const selectedDueDateType = watch('dueDateType');
 
-  // Fetch current visit for THIS_VISIT and NEXT_VISIT
-  const visitUrl =
-    selectedDueDateType === 'THIS_VISIT' || selectedDueDateType === 'NEXT_VISIT'
-      ? `${restBaseUrl}/visit?patient=${patientUuid}&v=custom:(uuid)&includeInactive=false&limit=1`
+  // Fetch current or last visit for NEXT_VISIT
+  const referenceVisitUrl =
+    selectedDueDateType === 'NEXT_VISIT'
+      ? `${restBaseUrl}/visit?patient=${patientUuid}&v=custom:(uuid)&includeInactive=true&limit=1`
       : null;
-  const { data: visitResponse } = useSWR<FetchResponse<{ results: Array<{ uuid: string }> }>>(visitUrl, openmrsFetch);
-  const visitData = visitResponse?.data;
+  const {
+    data: referenceVisitResponse,
+    isLoading: isReferenceVisitLoading,
+    error: referenceVisitError,
+  } = useSWR<FetchResponse<{ results: Array<{ uuid: string }> }>>(referenceVisitUrl, openmrsFetch);
+  const referenceVisitData = referenceVisitResponse?.data;
 
   const providerOptions = useMemo(
     () =>
@@ -108,8 +132,10 @@ const AddTaskForm: React.FC<AddTaskFormProps> = ({ patientUuid, onBack }) => {
     try {
       // Get visit UUID if THIS_VISIT or NEXT_VISIT is selected
       let visitUuid: string | undefined;
-      if ((data.dueDateType === 'THIS_VISIT' || data.dueDateType === 'NEXT_VISIT') && visitData?.results?.[0]) {
-        visitUuid = visitData.results[0].uuid;
+      if (data.dueDateType === 'THIS_VISIT') {
+        visitUuid = activeVisit?.uuid;
+      } else if (data.dueDateType === 'NEXT_VISIT') {
+        visitUuid = referenceVisitData?.results?.[0]?.uuid;
       }
 
       const payload: TaskInput = {
@@ -166,79 +192,65 @@ const AddTaskForm: React.FC<AddTaskFormProps> = ({ patientUuid, onBack }) => {
             </InputWrapper>
 
             <InputWrapper>
-              <div className={styles.dueDateSection}>
-                <label className={styles.dueDateLabel}>{t('dueLabel', 'Due')}</label>
-                <div className={styles.dueDateButtonGroup}>
+              <FormGroup legendText={t('dueLabel', 'Due')}>
+                <Controller
+                  name="dueDateType"
+                  control={control}
+                  render={({ field: { onChange, value } }) => {
+                    const validDueDateTypes: Array<'NEXT_VISIT' | 'THIS_VISIT' | 'DATE'> = [
+                      'NEXT_VISIT',
+                      'THIS_VISIT',
+                      'DATE',
+                    ];
+                    const idx = validDueDateTypes.indexOf(value as 'NEXT_VISIT' | 'THIS_VISIT' | 'DATE');
+                    const selectedIndex = idx >= 0 ? idx : 0;
+
+                    return (
+                      <ContentSwitcher
+                        selectedIndex={selectedIndex}
+                        onChange={({ name }) => {
+                          onChange(name);
+                          if (name === 'NEXT_VISIT' || name === 'THIS_VISIT') {
+                            setValue('dueDate', undefined);
+                          }
+                        }}
+                        size="md"
+                      >
+                        <Switch
+                          name="NEXT_VISIT"
+                          text={t('nextVisit', 'Next visit')}
+                          disabled={isReferenceVisitLoading || !!referenceVisitError}
+                        />
+                        <Switch
+                          name="THIS_VISIT"
+                          text={t('thisVisit', 'This visit')}
+                          disabled={isVisitLoading || !activeVisit}
+                        />
+                        <Switch name="DATE" text={t('date', 'Date')} />
+                      </ContentSwitcher>
+                    );
+                  }}
+                />
+              </FormGroup>
+              {selectedDueDateType === 'DATE' && (
+                <div className={styles.datePickerWrapper}>
                   <Controller
-                    name="dueDateType"
+                    name="dueDate"
                     control={control}
                     render={({ field }) => (
-                      <>
-                        <Button
-                          type="button"
-                          kind={field.value === 'NEXT_VISIT' ? 'primary' : 'tertiary'}
-                          size="sm"
-                          onClick={() => {
-                            field.onChange('NEXT_VISIT');
-                            setValue('dueDate', undefined);
-                          }}
-                          className={classNames(styles.dueDateButton, {
-                            [styles.dueDateButtonActive]: field.value === 'NEXT_VISIT',
-                          })}
-                        >
-                          {t('nextVisit', 'Next visit')}
-                        </Button>
-                        <Button
-                          type="button"
-                          kind={field.value === 'THIS_VISIT' ? 'primary' : 'tertiary'}
-                          size="sm"
-                          onClick={() => {
-                            field.onChange('THIS_VISIT');
-                            setValue('dueDate', undefined);
-                          }}
-                          className={classNames(styles.dueDateButton, {
-                            [styles.dueDateButtonActive]: field.value === 'THIS_VISIT',
-                          })}
-                        >
-                          {t('thisVisit', 'This visit')}
-                        </Button>
-                        <Button
-                          type="button"
-                          kind={field.value === 'DATE' ? 'primary' : 'tertiary'}
-                          size="sm"
-                          onClick={() => {
-                            field.onChange('DATE');
-                          }}
-                          className={classNames(styles.dueDateButton, {
-                            [styles.dueDateButtonActive]: field.value === 'DATE',
-                          })}
-                        >
-                          {t('date', 'Date')}
-                        </Button>
-                      </>
+                      <TextInput
+                        id="dueDate"
+                        type="date"
+                        labelText=""
+                        placeholder={t('dueDatePlaceholder', 'Select a due date')}
+                        invalid={Boolean(errors.dueDate)}
+                        invalidText={errors.dueDate?.message}
+                        {...field}
+                      />
                     )}
                   />
                 </div>
-                {selectedDueDateType === 'DATE' && (
-                  <div className={styles.datePickerWrapper}>
-                    <Controller
-                      name="dueDate"
-                      control={control}
-                      render={({ field }) => (
-                        <TextInput
-                          id="dueDate"
-                          type="date"
-                          labelText=""
-                          placeholder={t('dueDatePlaceholder', 'Select a due date')}
-                          invalid={Boolean(errors.dueDate)}
-                          invalidText={errors.dueDate?.message}
-                          {...field}
-                        />
-                      )}
-                    />
-                  </div>
-                )}
-              </div>
+              )}
             </InputWrapper>
 
             <InputWrapper>
@@ -319,7 +331,7 @@ const AddTaskForm: React.FC<AddTaskFormProps> = ({ patientUuid, onBack }) => {
           </div>
         </Form>
       </div>
-      <ButtonSet className={styles.buttonSet}>
+      <ButtonSet className={styles.bottomButtons}>
         <Button className={styles.button} kind="secondary" onClick={onBack} size="xl">
           {t('discard', 'Discard')}
         </Button>
